@@ -2,9 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <title>Comments</title>
 </head>
 <body>
-
+    <div class="container">
+        <h1>
+            Hello World
+        </h1>
+        <h3>Comments</h3>
+        {{ range . }}
+            <div>{{ . }}</div>
+        {{ end }}
+    </div>
 </body>
 </html>

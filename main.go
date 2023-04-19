@@ -2,20 +2,25 @@ package main
 
 import (
 	"fmt"
+	"github.com/go-redis/redis"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"html/template"
 	"net/http"
 )
 
+var redisClient *redis.Client
 var templates *template.Template
 
 func main() {
+	redisClient = redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
 	templates = template.Must(template.ParseGlob("templates/*.html"))
 	router := mux.NewRouter()
 	// http.HandleFunc("/", handler)
-	router.HandleFunc("/hello", helloHandler).Methods(http.MethodGet)
-	router.HandleFunc("/goodbye", goodbyeHandler).Methods(http.MethodGet)
+	router.HandleFunc("/", indexHandler).Methods(http.MethodGet)
+	// router.HandleFunc("/goodbye", goodbyeHandler).Methods(http.MethodGet)
 	http.Handle("/", router)
 	http.ListenAndServe(":8080", nil)
 
@@ -30,13 +35,19 @@ func main() {
 
 }
 
-func helloHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "Hello world")
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	// fmt.Fprint(w, "Hello world")
+	//comment := []string{"Hello", "World", "123"}
+	comment, err := redisClient.LRange("comments", 0, 10).Result()
+	if err != nil {
+		return
+	}
+	templates.ExecuteTemplate(w, "index.html", comment)
 }
 
-func goodbyeHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "goodbye world")
-}
+//func goodbyeHandler(w http.ResponseWriter, r *http.Request) {
+//	fmt.Fprint(w, "goodbye world")
+//}
 
 //import (
 //	"fmt"
