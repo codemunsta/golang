@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/go-redis/redis"
 	"github.com/gorilla/mux"
+	sessions2 "github.com/gorilla/sessions"
 	"github.com/rs/cors"
 	"html/template"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 var redisClient *redis.Client
 var templates *template.Template
+var sessions = sessions2.NewCookieStore([]byte("0skken_lzm_%4s3cr3t"))
 
 func main() {
 	redisClient = redis.NewClient(&redis.Options{
@@ -24,7 +26,10 @@ func main() {
 	router.HandleFunc("/", indexHandler).Methods(http.MethodGet)
 	router.HandleFunc("/form", formHandler).Methods(http.MethodGet)
 	router.HandleFunc("/form", formHandler).Methods(http.MethodPost)
+	router.HandleFunc("/login", loginHandler).Methods(http.MethodGet)
+	router.HandleFunc("/login", loginHandler).Methods(http.MethodPost)
 	// router.HandleFunc("/goodbye", goodbyeHandler).Methods(http.MethodGet)
+	router.HandleFunc("/test-session", testHandler).Methods(http.MethodGet)
 	http.Handle("/", router)
 	http.ListenAndServe(":8080", nil)
 
@@ -58,6 +63,38 @@ func formHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		templates.ExecuteTemplate(w, "form.html", nil)
 	}
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		r.ParseForm()
+		username := r.PostForm.Get("username")
+		session, err := sessions.Get(r, "session")
+		if err != nil {
+			return
+		}
+		session.Values["username"] = username
+		session.Save(r, w)
+	} else {
+		templates.ExecuteTemplate(w, "login.html", nil)
+	}
+}
+
+func testHandler(w http.ResponseWriter, r *http.Request) {
+	session, err := sessions.Get(r, "session")
+	if err != nil {
+		return
+	}
+	name, exist := session.Values["username"]
+	if !exist {
+		return
+	}
+	username, ok := name.(string)
+	if !ok {
+		return
+	}
+	w.Write([]byte(username))
+	fmt.Fprintf(w, "\n %v", username)
 }
 
 //func goodbyeHandler(w http.ResponseWriter, r *http.Request) {
