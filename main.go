@@ -20,6 +20,8 @@ func main() {
 	router := mux.NewRouter()
 	// http.HandleFunc("/", handler)
 	router.HandleFunc("/", indexHandler).Methods(http.MethodGet)
+	router.HandleFunc("/form", formHandler).Methods(http.MethodGet)
+	router.HandleFunc("/form", formHandler).Methods(http.MethodPost)
 	// router.HandleFunc("/goodbye", goodbyeHandler).Methods(http.MethodGet)
 	http.Handle("/", router)
 	http.ListenAndServe(":8080", nil)
@@ -43,6 +45,17 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	templates.ExecuteTemplate(w, "index.html", comment)
+}
+
+func formHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		r.ParseForm()
+		comment := r.PostForm.Get("Comment")
+		redisClient.LPush("comments", comment)
+		http.Redirect(w, r, "/", 302)
+	} else {
+		templates.ExecuteTemplate(w, "form.html", nil)
+	}
 }
 
 //func goodbyeHandler(w http.ResponseWriter, r *http.Request) {
