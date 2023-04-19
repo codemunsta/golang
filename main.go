@@ -18,6 +18,8 @@ func main() {
 	})
 	templates = template.Must(template.ParseGlob("templates/*.html"))
 	router := mux.NewRouter()
+	fileServer := http.FileServer(http.Dir("./static"))
+	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", fileServer))
 	// http.HandleFunc("/", handler)
 	router.HandleFunc("/", indexHandler).Methods(http.MethodGet)
 	router.HandleFunc("/form", formHandler).Methods(http.MethodGet)
