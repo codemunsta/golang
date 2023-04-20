@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/mux"
 	sessions2 "github.com/gorilla/sessions"
 	"github.com/rs/cors"
+	"golang.org/x/crypto/bcrypt"
 	"html/template"
 	"net/http"
 )
@@ -15,6 +16,7 @@ var templates *template.Template
 var sessions = sessions2.NewCookieStore([]byte("0skken_lzm_%4s3cr3t"))
 
 func main() {
+	fmt.Println("Server Started")
 	redisClient = redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
@@ -28,8 +30,10 @@ func main() {
 	router.HandleFunc("/form", formHandler).Methods(http.MethodPost)
 	router.HandleFunc("/login", loginHandler).Methods(http.MethodGet)
 	router.HandleFunc("/login", loginHandler).Methods(http.MethodPost)
+	router.HandleFunc("/register", registerHandler).Methods(http.MethodGet)
+	router.HandleFunc("/register", registerHandler).Methods(http.MethodPost)
 	// router.HandleFunc("/goodbye", goodbyeHandler).Methods(http.MethodGet)
-	router.HandleFunc("/test-session", testHandler).Methods(http.MethodGet)
+	// router.HandleFunc("/test-session", testHandler).Methods(http.MethodGet)
 	http.Handle("/", router)
 	http.ListenAndServe(":8080", nil)
 
@@ -47,14 +51,28 @@ func main() {
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	// fmt.Fprint(w, "Hello world")
 	//comment := []string{"Hello", "World", "123"}
-	comment, err := redisClient.LRange("comments", 0, 10).Result()
-	if err != nil {
+	session, _ := sessions.Get(r, "session")
+	name, ok := session.Values["username"]
+	if !ok {
+		http.Redirect(w, r, "/login", 302)
 		return
+	} else {
+		fmt.Println(name)
+		comment, err := redisClient.LRange("comments", 0, 10).Result()
+		if err != nil {
+			return
+		}
+		templates.ExecuteTemplate(w, "index.html", comment)
 	}
-	templates.ExecuteTemplate(w, "index.html", comment)
 }
 
 func formHandler(w http.ResponseWriter, r *http.Request) {
+	session, _ := sessions.Get(r, "session")
+	_, ok := session.Values["username"]
+	if !ok {
+		http.Redirect(w, r, "/login", 302)
+		return
+	}
 	if r.Method == "POST" {
 		r.ParseForm()
 		comment := r.PostForm.Get("Comment")
@@ -69,33 +87,60 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
 		username := r.PostForm.Get("username")
+		password := r.PostForm.Get("password")
+		hash, error := redisClient.Get("user:" + username).Bytes()
+		if error != nil {
+			return
+		}
+		compare := bcrypt.CompareHashAndPassword(hash, []byte(password))
+		if compare != nil {
+			return
+		}
 		session, err := sessions.Get(r, "session")
 		if err != nil {
 			return
 		}
 		session.Values["username"] = username
 		session.Save(r, w)
+		http.Redirect(w, r, "/", 302)
 	} else {
 		templates.ExecuteTemplate(w, "login.html", nil)
 	}
 }
 
-func testHandler(w http.ResponseWriter, r *http.Request) {
-	session, err := sessions.Get(r, "session")
-	if err != nil {
-		return
+func registerHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		r.ParseForm()
+		username := r.PostForm.Get("username")
+		password := r.PostForm.Get("password")
+		cost := bcrypt.DefaultCost
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), cost)
+		if err != nil {
+			return
+		}
+		redisClient.Set("user:"+username, hash, 0)
+		http.Redirect(w, r, "/login", 302)
+	} else {
+		templates.ExecuteTemplate(w, "register.html", nil)
 	}
-	name, exist := session.Values["username"]
-	if !exist {
-		return
-	}
-	username, ok := name.(string)
-	if !ok {
-		return
-	}
-	w.Write([]byte(username))
-	fmt.Fprintf(w, "\n %v", username)
 }
+
+//func testHandler(w http.ResponseWriter, r *http.Request) {
+//	session, err := sessions.Get(r, "session")
+//	if err != nil {
+//		return
+//	}
+//	name, exist := session.Values["username"]
+//	if !exist {
+//		return
+//	}
+//	username, ok := name.(string)
+//	if !ok {
+//		return
+//	}
+//	w.Write([]byte(username))
+//	fmt.Fprintf(w, "\n %v", username)
+//}
 
 //func goodbyeHandler(w http.ResponseWriter, r *http.Request) {
 //	fmt.Fprint(w, "goodbye world")
