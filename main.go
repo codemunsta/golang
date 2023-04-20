@@ -25,9 +25,9 @@ func main() {
 	fileServer := http.FileServer(http.Dir("./static"))
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", fileServer))
 	// http.HandleFunc("/", handler)
-	router.HandleFunc("/", indexHandler).Methods(http.MethodGet)
-	router.HandleFunc("/form", formHandler).Methods(http.MethodGet)
-	router.HandleFunc("/form", formHandler).Methods(http.MethodPost)
+	router.HandleFunc("/", AuthRequired(indexHandler)).Methods(http.MethodGet)
+	router.HandleFunc("/form", AuthRequired(formHandler)).Methods(http.MethodGet)
+	router.HandleFunc("/form", AuthRequired(formHandler)).Methods(http.MethodPost)
 	router.HandleFunc("/login", loginHandler).Methods(http.MethodGet)
 	router.HandleFunc("/login", loginHandler).Methods(http.MethodPost)
 	router.HandleFunc("/register", registerHandler).Methods(http.MethodGet)
@@ -48,35 +48,40 @@ func main() {
 
 }
 
-func indexHandler(w http.ResponseWriter, r *http.Request) {
-	// fmt.Fprint(w, "Hello world")
-	//comment := []string{"Hello", "World", "123"}
-	session, _ := sessions.Get(r, "session")
-	name, ok := session.Values["username"]
-	if !ok {
-		http.Redirect(w, r, "/login", 302)
-		return
-	} else {
-		fmt.Println(name)
-		comment, err := redisClient.LRange("comments", 0, 10).Result()
-		if err != nil {
+func AuthRequired(handler http.HandlerFunc) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		session, _ := sessions.Get(request, "session")
+		_, ok := session.Values["username"]
+		if !ok {
+			http.Redirect(writer, request, "/login", 302)
 			return
 		}
-		templates.ExecuteTemplate(w, "index.html", comment)
+		handler.ServeHTTP(writer, request)
 	}
 }
 
-func formHandler(w http.ResponseWriter, r *http.Request) {
-	session, _ := sessions.Get(r, "session")
-	_, ok := session.Values["username"]
-	if !ok {
-		http.Redirect(w, r, "/login", 302)
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	// fmt.Fprint(w, "Hello world")
+	//comment := []string{"Hello", "World", "123"}
+	comment, err := redisClient.LRange("comments", 0, 10).Result()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal Server error"))
 		return
 	}
+	templates.ExecuteTemplate(w, "index.html", comment)
+}
+
+func formHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		r.ParseForm()
 		comment := r.PostForm.Get("Comment")
-		redisClient.LPush("comments", comment)
+		err := redisClient.LPush("comments", comment).Err()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal Server error"))
+			return
+		}
 		http.Redirect(w, r, "/", 302)
 	} else {
 		templates.ExecuteTemplate(w, "form.html", nil)
@@ -89,15 +94,23 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		username := r.PostForm.Get("username")
 		password := r.PostForm.Get("password")
 		hash, error := redisClient.Get("user:" + username).Bytes()
-		if error != nil {
+		if error == redis.Nil {
+			templates.ExecuteTemplate(w, "login.html", "unknown user error")
+			return
+		} else if error != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal Server error"))
 			return
 		}
 		compare := bcrypt.CompareHashAndPassword(hash, []byte(password))
 		if compare != nil {
+			templates.ExecuteTemplate(w, "login.html", "invalid password")
 			return
 		}
 		session, err := sessions.Get(r, "session")
 		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal Server error"))
 			return
 		}
 		session.Values["username"] = username
@@ -116,9 +129,16 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		cost := bcrypt.DefaultCost
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), cost)
 		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal Server error"))
 			return
 		}
-		redisClient.Set("user:"+username, hash, 0)
+		err = redisClient.Set("user:"+username, hash, 0).Err()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Internal Server error"))
+			return
+		}
 		http.Redirect(w, r, "/login", 302)
 	} else {
 		templates.ExecuteTemplate(w, "register.html", nil)
